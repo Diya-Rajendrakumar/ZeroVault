@@ -1,0 +1,239 @@
+   <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 60px auto;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 40px;
+        }
+
+        .container {
+            border: 1px solid #ccc;
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+
+        input {
+            margin: 15px;
+            padding: 10px;
+        }
+
+        button {
+            padding: 12px 20px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+        }
+
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>ZeroVault</h1>
+
+    <p>Secure Zero-Knowledge File Storage</p>
+
+    <div class="container">
+
+        <h2>Encrypt Your File</h2>
+
+        <input type="file" id="fileInput">
+
+        <br>
+
+        <input
+            type="password"
+            id="password"
+            placeholder="Enter encryption password"
+        >
+
+        <br>
+
+        <button id="uploadButton">
+            Encrypt File
+        </button>
+
+        <p id="status"></p>
+
+    </div>
+
+
+    <script>
+
+        const fileInput = document.getElementById("fileInput");
+        const passwordInput = document.getElementById("password");
+        const uploadButton = document.getElementById("uploadButton");
+        const status = document.getElementById("status");
+
+
+        // Convert the user's password into an AES-256 encryption key
+        async function deriveKey(password, salt) {
+
+            const encoder = new TextEncoder();
+
+            const passwordKey = await crypto.subtle.importKey(
+                "raw",
+                encoder.encode(password),
+                "PBKDF2",
+                false,
+                ["deriveKey"]
+            );
+
+            return crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: salt,
+                    iterations: 100000,
+                    hash: "SHA-256"
+                },
+                passwordKey,
+                {
+                    name: "AES-GCM",
+                    length: 256
+                },
+                false,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+
+        // Encrypt the selected file
+        uploadButton.addEventListener("click", async () => {
+
+            const file = fileInput.files[0];
+            const password = passwordInput.value;
+
+
+            // Check whether a file was selected
+            if (!file) {
+                status.textContent = "Please select a file.";
+                return;
+            }
+
+
+            // Check whether a password was entered
+            if (!password) {
+                status.textContent = "Please enter a password.";
+                return;
+            }
+
+
+            try {
+
+                status.textContent = "Encrypting file locally...";
+
+
+                // Read the file
+                const fileData = await file.arrayBuffer();
+
+
+                // Generate a random salt
+                const salt = crypto.getRandomValues(
+                    new Uint8Array(16)
+                );
+
+
+                // Generate a random initialization vector
+                const iv = crypto.getRandomValues(
+                    new Uint8Array(12)
+                );
+
+
+                // Create encryption key from password
+                const key = await deriveKey(
+                    password,
+                    salt
+                );
+
+
+                // Encrypt the file using AES-GCM
+                const encryptedData = await crypto.subtle.encrypt(
+                    {
+                        name: "AES-GCM",
+                        iv: iv
+                    },
+                    key,
+                    fileData
+                );
+
+
+                console.log(
+                    "Original file:",
+                    file.name
+                );
+
+                console.log(
+                    "Original size:",
+                    fileData.byteLength
+                );
+
+                console.log(
+                    "Encrypted size:",
+                    encryptedData.byteLength
+                );
+
+
+                // Combine salt + IV + encrypted file
+                const encryptedBlob = new Blob(
+                    [
+                        salt,
+                        iv,
+                        encryptedData
+                    ],
+                    {
+                        type: "application/octet-stream"
+                    }
+                );
+
+
+                // Create download link
+                const downloadUrl =
+                    URL.createObjectURL(encryptedBlob);
+
+
+                const link =
+                    document.createElement("a");
+
+                link.href = downloadUrl;
+
+                link.download =
+                    file.name + ".encrypted";
+
+
+                // Start download
+                link.click();
+
+
+                // Clean up
+                URL.revokeObjectURL(downloadUrl);
+
+
+                status.textContent =
+                    "File encrypted successfully!";
+
+
+            } catch (error) {
+
+                console.error(error);
+
+                status.textContent =
+                    "Encryption failed.";
+
+            }
+
+        });
+
+    </script>
+
+</body>
+</html>
