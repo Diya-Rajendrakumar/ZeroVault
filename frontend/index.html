@@ -1,4 +1,12 @@
-   <style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>ZeroVault</title>
+
+    <style>
         body {
             font-family: Arial, sans-serif;
             max-width: 700px;
@@ -45,7 +53,7 @@
 
     <div class="container">
 
-        <h2>Encrypt Your File</h2>
+        <h2>Encrypt & Store File</h2>
 
         <input type="file" id="fileInput">
 
@@ -60,7 +68,7 @@
         <br>
 
         <button id="uploadButton">
-            Encrypt File
+            Encrypt & Store
         </button>
 
         <p id="status"></p>
@@ -76,7 +84,7 @@
         const status = document.getElementById("status");
 
 
-        // Convert the user's password into an AES-256 encryption key
+        // Convert password into an AES-256 encryption key
         async function deriveKey(password, salt) {
 
             const encoder = new TextEncoder();
@@ -107,21 +115,19 @@
         }
 
 
-        // Encrypt the selected file
+        // Encrypt file and send ONLY encrypted data to server
         uploadButton.addEventListener("click", async () => {
 
             const file = fileInput.files[0];
             const password = passwordInput.value;
 
 
-            // Check whether a file was selected
             if (!file) {
                 status.textContent = "Please select a file.";
                 return;
             }
 
 
-            // Check whether a password was entered
             if (!password) {
                 status.textContent = "Please enter a password.";
                 return;
@@ -133,30 +139,30 @@
                 status.textContent = "Encrypting file locally...";
 
 
-                // Read the file
+                // Read original file
                 const fileData = await file.arrayBuffer();
 
 
-                // Generate a random salt
+                // Generate random salt
                 const salt = crypto.getRandomValues(
                     new Uint8Array(16)
                 );
 
 
-                // Generate a random initialization vector
+                // Generate random IV
                 const iv = crypto.getRandomValues(
                     new Uint8Array(12)
                 );
 
 
-                // Create encryption key from password
+                // Create AES key from password
                 const key = await deriveKey(
                     password,
                     salt
                 );
 
 
-                // Encrypt the file using AES-GCM
+                // Encrypt file in the browser
                 const encryptedData = await crypto.subtle.encrypt(
                     {
                         name: "AES-GCM",
@@ -167,9 +173,77 @@
                 );
 
 
+                /*
+                    Store:
+
+                    [ salt ][ IV ][ encrypted data ]
+
+                    The server receives only this encrypted data.
+                */
+
+                const encryptedBlob = new Blob(
+                    [
+                        salt,
+                        iv,
+                        encryptedData
+                    ],
+                    {
+                        type: "application/octet-stream"
+                    }
+                );
+
+
+                status.textContent =
+                    "Uploading encrypted file...";
+
+
+                // Create multipart form
+                const formData = new FormData();
+
+                formData.append(
+                    "file",
+                    encryptedBlob,
+                    file.name + ".encrypted"
+                );
+
+
+                // Send encrypted file to FastAPI
+                const response = await fetch(
+                    "http://127.0.0.1:8000/store-encrypted",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+                const result = await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        result.detail || "Upload failed."
+                    );
+
+                }
+
+
+                console.log("Server response:", result);
+
+
+                status.textContent =
+                    "Encrypted file stored successfully!";
+
+
                 console.log(
-                    "Original file:",
+                    "Original filename:",
                     file.name
+                );
+
+                console.log(
+                    "Encrypted filename:",
+                    result.filename
                 );
 
                 console.log(
@@ -183,51 +257,12 @@
                 );
 
 
-                // Combine salt + IV + encrypted file
-                const encryptedBlob = new Blob(
-                    [
-                        salt,
-                        iv,
-                        encryptedData
-                    ],
-                    {
-                        type: "application/octet-stream"
-                    }
-                );
-
-
-                // Create download link
-                const downloadUrl =
-                    URL.createObjectURL(encryptedBlob);
-
-
-                const link =
-                    document.createElement("a");
-
-                link.href = downloadUrl;
-
-                link.download =
-                    file.name + ".encrypted";
-
-
-                // Start download
-                link.click();
-
-
-                // Clean up
-                URL.revokeObjectURL(downloadUrl);
-
-
-                status.textContent =
-                    "File encrypted successfully!";
-
-
             } catch (error) {
 
                 console.error(error);
 
                 status.textContent =
-                    "Encryption failed.";
+                    "Error: " + error.message;
 
             }
 

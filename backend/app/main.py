@@ -1,9 +1,18 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
 import os
 
 app = FastAPI(title="ZeroVault API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 UPLOAD_FOLDER = "uploads"
 
@@ -80,4 +89,31 @@ async def decrypt_file(filename: str, encryption_key: str):
         raise HTTPException(
             status_code=400,
             detail="Invalid encryption key or corrupted file"
+        )
+
+@app.post("/store-encrypted")
+async def store_encrypted_file(file: UploadFile = File(...)):
+
+    try:
+        # Keep only the filename, not any folder path
+        safe_filename = os.path.basename(file.filename)
+
+        # Read the already-encrypted file
+        encrypted_data = await file.read()
+
+        # Save the encrypted file directly
+        file_path = os.path.join(UPLOAD_FOLDER, safe_filename)
+
+        with open(file_path, "wb") as encrypted_file:
+            encrypted_file.write(encrypted_data)
+
+        return {
+            "message": "Encrypted file stored successfully!",
+            "filename": safe_filename
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store encrypted file: {str(e)}"
         )
